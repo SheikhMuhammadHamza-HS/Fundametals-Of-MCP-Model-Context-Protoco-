@@ -1,104 +1,42 @@
-import asyncio
-from mcp import ClientSession,types
 from mcp.client.streamable_http import streamablehttp_client
+from mcp import ClientSession, types
+import asyncio
 from contextlib import AsyncExitStack
-from typing import Optional
-from pydantic import AnyUrl
-import json
 
 class MCPClient:
-  def __init__(
-      self,
-      server_url:str,
-    ):
-      self._server_url = server_url
-      self._session:Optional[ClientSession] = None
-      self._exit_stack: AsyncExitStack = AsyncExitStack()
-    
-    
-  async def connection(self):
-    streamable_transport = await self._exit_stack.enter_async_context(
-      streamablehttp_client(self._server_url)
-    ) # connection banana
-    
-    
-    # connection banjye tu session ko manage krna
-    _read,_write  , _get_session_id = streamable_transport
-    self._session = await self._exit_stack.enter_async_context(
-      ClientSession(_read,_write)
-    )
-    # session ko initialize krna
-    await self._session.initialize()
-  
-  # after working close the session
-  async def cleanUp(self):
-    await self._exit_stack.aclose()
-    self.session = None
-    
-  async def __aenter__(self):
-    await self.connection()
-    return self
-  
-  async def __aexit__(self,exc_type,exc,tb):
-    await self.cleanUp()
-  
-  
-  def session(self)-> ClientSession:
-    if self._session is None:
-      raise ConnectionError(
-       'Client session is not initialized or cache not populated. call connect to sever first' 
-      )
-  
-  async def list_tools(self):
-    result = await self._session.list_tools()
-    return result.tools  
-  
-  async def list_resources(self) -> list.ListResourcesRequest:
-    result = await self._session.list_resources()
-    return result.resources
-  
-  async def read_resource(self, uri:AnyUrl) -> types.ReadResourceResult:
-    result = await self._session.read_resource(AnyUrl(uri))
-    resource = result.contents[0]
-    if isinstance(resource,types.TextResourceContents):
-      if resource.mimeType == 'application/json':
-        try:
-            return json.loads(resource.text)
-        except json.JSONDecodeError as e:     #when json is not correct format
-          print(f'Error decoding json {e}')
-    return resource.text
+    def __init__(self, url):
+        self.url = url
+        self.stack = AsyncExitStack()
+        self._sess = None
         
+    async def __aenter__(self):
+        read, write, _ = await self.stack.enter_async_context(
+            streamablehttp_client(self.url)
+        )
+        self._sess = await self.stack.enter_async_context(
+            ClientSession(read, write)
+        )
+        await self._sess.initialize()
+        return self
         
-  async def list_resource_template(self) -> types.ListResourceTemplatesResult:
-    result = await self._session.list_resource_templates()
-    return result.resourceTemplates
-    # print(f"resource template: {result.resourceTemplates}") 
+    async def __aexit__(self, *args):
+        await self.stack.aclose()
     
+    async def list_tools(self) -> types.Tool:
+        return (await self._sess.list_tools()).tools
     
-  
+    async def call_tool(self, tool_name:str, arg:dict):
+        res = await self._sess.call_tool(tool_name, arg)
+        return res  
+    
+    async def resources(self):
+        return await self._sess.resources()
 async def main():
-  async with MCPClient(server_url="http://localhost:8000/mcp/") as _client:
-    tools = await _client.list_tools()
-    print(f'Available Tools: {tools}')
-    
-  # async with MCPClient(server_url="http://localhost:8000/mcp/") as _client:
-  #   list_resources = await _client.list_resources()
-  #   for resource in list_resources:
-  #     print(f"\nRead Resource: {resource}\n")
-    
-    
-  #   # static way
-  #   
-    read_resource = await _client.read_resource('docs://documents')
-    print(f'read resources: {read_resource}')
-    
-    # dynamic way
-    template = await _client.list_resource_template()
-    # print(f'read resources: {read_resource_template}')
-    docs_uri = template[0].uriTemplate.replace('{doc_id}', "guide") # get intro key
-    read_resource_data = await _client.read_resource(docs_uri)
-    print(f"intro uri: {read_resource_data}")
-    
-    
-    
-asyncio.run(main())     
+    async with MCPClient("http://localhost:8000/mcp") as client:
+        tools = await client.list_tools()
+        print(tools, " tools")
+     
+    async with MCPClient("http://localhost:8000/mcp") as client:
+        result = await client.call_tool("read_docs", {"doc_id": "deposition.md"})
+        print(f"Document contents: {result}")
+asyncio.run(main())
