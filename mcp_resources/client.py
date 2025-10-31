@@ -16,18 +16,19 @@ class MCPClient:
       self._exit_stack: AsyncExitStack = AsyncExitStack()
     
     
+    # make connecgtion  
   async def connection(self):
     streamable_transport = await self._exit_stack.enter_async_context(
       streamablehttp_client(self._server_url)
-    ) # connection banana
+    ) 
     
     
-    # connection banjye tu session ko manage krna
+    # after the make connection then manage the session
     _read,_write  , _get_session_id = streamable_transport
     self._session = await self._exit_stack.enter_async_context(
       ClientSession(_read,_write)
     )
-    # session ko initialize krna
+    # initialize the session
     await self._session.initialize()
   
   # after working close the session
@@ -49,10 +50,7 @@ class MCPClient:
        'Client session is not initialized or cache not populated. call connect to sever first' 
       )
   
-  async def list_tools(self):
-    result = await self._session.list_tools()
-    return result.tools  
-  
+ 
   async def list_resources(self):
     result = await self._session.list_resources()
     return result.resources
@@ -75,12 +73,7 @@ class MCPClient:
     # print(f"resource template: {result.resourceTemplates}") 
     
     
-  
 async def main():
-  async with MCPClient(server_url="http://localhost:8000/mcp/") as _client:
-    tools = await _client.list_tools()
-    print(f'Available Tools: {tools}')
-    
   async with MCPClient(server_url="http://localhost:8000/mcp/") as _client:
     list_resources = await _client.list_resources()
     for resource in list_resources:
@@ -98,7 +91,5 @@ async def main():
     docs_uri = template[0].uriTemplate.replace('{doc_id}', "guide") # get intro key
     read_resource_data = await _client.read_resource(docs_uri)
     print(f"intro uri: {read_resource_data}")
-    
-    
     
 asyncio.run(main())     
